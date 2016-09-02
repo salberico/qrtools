@@ -1,6 +1,9 @@
 # -​- coding: utf-8 -​-
 from data import error_chart
 
+def cap_exp(e):
+	return e%256 + e//256
+
 class QR(object):
 	def __init__(self, data):
 		self.version = 1
@@ -19,6 +22,31 @@ class QR(object):
 		#http://www.thonky.com/qr-code-tutorial/error-correction-table
 		return error_chart[version][correction][1:]
 		
+	def divide_polynomial(self, m, g):
+		mult = exponent[m[0]]
+		#(m)essage, (g)enerator
+	
+		# Temp generator to be used 
+		temp_g = [val for val in g]
+	
+		xor_last = m
+		for _ in range(len(m)):
+			xor = []
+		
+			for i in range(len(temp_g)):
+				# Multiply term from original generator and convert to integer notation
+				temp_g[i] = integer[cap_exp(g[i] + mult)]
+
+			for i in range(1, max(len(xor_last), len(g))):
+				# Bitwise XOR on each coeffitient
+				xor.append((xor_last[i] if i < len(xor_last) else 0) ^ (temp_g[i] if i < len(temp_g) else 0))
+		
+			# Update multiplier alpha
+			mult = exponent[xor[0]]
+			xor_last = xor
+		
+		return xor
+	
 	def get_bytestring(self, mode, charcount, edata):
 		prestring = mode + charcount + edata
 		
