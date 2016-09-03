@@ -8,7 +8,9 @@ class Matrix(object):
 	""" QR Matrix """
 	
 	def __init__(self, version):
-		self.size = version * 4 + 17
+	
+		self.version = version
+		self.size = self.version * 4 + 17
 		
 		# Char map for OFF(0) and ON(1)
 		self.char = ['  ', '██']
@@ -21,15 +23,27 @@ class Matrix(object):
 		               [1,0,1,1,1,0,1], \
 		               [1,0,0,0,0,0,1], \
 		               [1,1,1,1,1,1,1]]
+					   
+		self.aligner = [[1,1,1,1,1], \
+		              [1,0,0,0,1], \
+		              [1,0,1,0,1], \
+		              [1,0,0,0,1], \
+		              [1,1,1,1,1]]
 		
 		self.matrix = self.gen_matrix(self.size)
 		self.add_finders()
+		self.add_aligners()
 		
 	def __getitem__(self, index):
 		return self.matrix[index[0]][index[1]]
 		
 	def __setitem__(self, index, val):
 		self.matrix[index[0]][index[1]] = val
+	
+	def save(self, file):
+		# Write QR Matrix to file
+		outfile = open(file, 'w', encoding='utf-8')
+		outfile.write(self.to_string())
 	
 	def blit(self, pattern, loc):
 		''' 
@@ -47,6 +61,20 @@ class Matrix(object):
 		self.blit(self.finder, (0,0))
 		self.blit(self.finder, (0,self.size-7))
 		self.blit(self.finder, (self.size-7,0))
+		
+	def add_aligners(self):
+		# Add specification standard aligment patterns to matrix
+		needed = alignment[self.version]
+		
+		# Store count of needed
+		total = len(needed)
+		
+		# Draw for each combination except when overlapping with finders
+		for x in range(total):
+			for y in range(total):
+				# Make sure aligner will not overlap with finder
+				if not((y == 0 and (x == total-1 or x == 0)) or (y == total-1 and x == 0)):
+					self.blit(self.aligner, (needed[x]-2, needed[y]-2))
 	
 	def flatten(self):
 		flat = []
