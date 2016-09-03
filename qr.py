@@ -125,16 +125,18 @@ class Matrix(object):
 		self.matrix[8][self.size - 8] = 1 
 		
 	def insert_bits(self, bits):
-		#bits = '-1' * 1072
 		''' Insert bits in vertical horizontal zig-zag pattern, skipping reserve_areas'''
 		loc = [self.size-1, self.size-1]
 		
-		# Send first value to back, that way one loop can be used
-		bits = bits[1:] + bits[0]
+		# insert first value then continue without, #temporary workaround
+		self.matrix[loc[0]][loc[1]] = int(bits[0])
 		
+		# Initialize increments
 		divisor = -2
-		bit_index = 0
-		for inc in range(len(bits)):
+		bit_index = 1
+		
+		# While there is still bits to be filled
+		for inc in range(self.size**2):	
 			# Skip the vertical timer
 			if loc[0] == 6: loc[0] -= 1
 			
