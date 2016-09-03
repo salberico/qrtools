@@ -1,5 +1,6 @@
 # -​- coding: utf-8 -​-
 from data import *
+from itertools import chain
 
 def cap_exp(e):
 	return e%256 + e//256
@@ -12,27 +13,43 @@ class Matrix(object):
 		self.version = version
 		self.size = self.version * 4 + 17
 		
-		# Char map for OFF(0) and ON(1)
-		self.char = ['  ', '██']
+		# Char map for UNDEFINED(-1), OFF(0) and ON(1)
+		self.char = {-1:'░░', 0:'  ', 1:'██'}
 	
 		# Finder pattern for QR code
-		self.finder = [[1,1,1,1,1,1,1], \
-		               [1,0,0,0,0,0,1], \
-		               [1,0,1,1,1,0,1], \
-		               [1,0,1,1,1,0,1], \
-		               [1,0,1,1,1,0,1], \
-		               [1,0,0,0,0,0,1], \
-		               [1,1,1,1,1,1,1]]
-					   
+		self.finder = [[0,0,0,0,0,0,0,0,0], \
+		               [0,1,1,1,1,1,1,1,0], \
+		               [0,1,0,0,0,0,0,1,0], \
+		               [0,1,0,1,1,1,0,1,0], \
+		               [0,1,0,1,1,1,0,1,0], \
+		               [0,1,0,1,1,1,0,1,0], \
+		               [0,1,0,0,0,0,0,1,0], \
+		               [0,1,1,1,1,1,1,1,0], \
+		               [0,0,0,0,0,0,0,0,0]]
+				
+		# Aligner pattern for QR code				
 		self.aligner = [[1,1,1,1,1], \
 		              [1,0,0,0,1], \
 		              [1,0,1,0,1], \
 		              [1,0,0,0,1], \
 		              [1,1,1,1,1]]
-		
+					
+		# Version reserver base patterns
+		self.version_reserve_h = [[0,0,0,0,0,0], \
+		                         [0,0,0,0,0,0], \
+		                         [0,0,0,0,0,0]]				 
+		self.version_reserve_v = [[0,0,0], \
+		                          [0,0,0], \
+		                          [0,0,0], \
+		                          [0,0,0], \
+		                          [0,0,0], \
+		                          [0,0,0]]			
+								  
 		self.matrix = self.gen_matrix(self.size)
 		self.add_finders()
 		self.add_aligners()
+		self.reserve_areas()
+		self.add_timers()
 		
 	def __getitem__(self, index):
 		return self.matrix[index[0]][index[1]]
@@ -52,15 +69,17 @@ class Matrix(object):
 		'''
 		for y in range(len(pattern)):
 			for x in range(len(pattern[y])):
-				# Override the matrix at needed locations offset by supplied
-				self.matrix[loc[0]+x][loc[1]+y] = pattern[y][x]
+				# Only override if it will be on screen
+				if loc[0]+x >= 0 and loc[1]+y >=0 and loc[0]+x < self.size and loc[1]+y < self.size:
+					# Override the matrix at needed locations offset by supplied
+					self.matrix[loc[0]+x][loc[1]+y] = pattern[y][x]
 			
 			
 	def add_finders(self):
 		# Add finder pattern to top-left, bottom-left and top-right
-		self.blit(self.finder, (0,0))
-		self.blit(self.finder, (0,self.size-7))
-		self.blit(self.finder, (self.size-7,0))
+		self.blit(self.finder, (-1,-1))
+		self.blit(self.finder, (-1,self.size-8))
+		self.blit(self.finder, (self.size-8,-1))
 		
 	def add_aligners(self):
 		# Add specification standard aligment patterns to matrix
@@ -75,6 +94,70 @@ class Matrix(object):
 				# Make sure aligner will not overlap with finder
 				if not((y == 0 and (x == total-1 or x == 0)) or (y == total-1 and x == 0)):
 					self.blit(self.aligner, (needed[x]-2, needed[y]-2))
+	
+	def add_timers(self):
+		'''Add specification timers, long alternating lines between finders'''
+		
+		current = 1
+		# Shared loop for horizontal and vertical line starting after finder (8,6) and (6,8)
+		for value in range(8, self.size-8):
+			self.matrix[value][6] = current
+			self.matrix[6][value] = current
+			
+			#Flip current 0->1 or 1->0
+			current ^= 1
+			
+	def reserve_areas(self):
+		'''Reserves format and version areas if neccassary by taking off undefined'''
+		
+		# Reserve format information around finders using shared loop
+		# skip middle area through chain, but keep as generator in python3
+		for value in chain(range(9), range(self.size-8, self.size)):
+			self.matrix[8][value] = 0
+			self.matrix[value][8] = 0
+			
+		# Reserve version information area for QR7 and over
+		if self.version >= 7:
+			self.blit(self.version_reserve_h, (0, self.size-11))
+			self.blit(self.version_reserve_v, (self.size-11, 0))
+		
+		# Add specification standard dark spot 
+		self.matrix[8][self.size - 8] = 1 
+		
+	def insert_bits(self, bits):
+		#bits = '-1' * 1072
+		''' Insert bits in vertical horizontal zig-zag pattern, skipping reserve_areas'''
+		loc = [self.size-1, self.size-1]
+		
+		# Send first value to back, that way one loop can be used
+		bits = bits[1:] + bits[0]
+		
+		divisor = -2
+		bit_index = 0
+		for inc in range(len(bits)):
+			# Skip the vertical timer
+			if loc[0] == 6: loc[0] -= 1
+			
+			# Alternate increment from 1 to -1 for x
+			loc[0] += 2 * (inc%2) - 1
+			
+			# Alternate increment from 0 to 1 or 0 to -1 depending on divisor
+			loc[1] += inc % divisor
+			
+			# Set matrix at found location equal to the current bit if it's empty
+			if self.matrix[loc[0]][loc[1]] == -1:
+				self.matrix[loc[0]][loc[1]] = int(bits[bit_index])
+				bit_index += 1
+			
+			# Offset locations when top or bottom is reached and flip divisor
+			if (inc/2+1) % self.size == 0:
+				loc[0] -= 2
+				loc[1] += 2//divisor
+				divisor *= -1 
+			
+		# Number of successfull bit placements
+		return bit_index
+			
 	
 	def flatten(self):
 		flat = []
@@ -92,7 +175,7 @@ class Matrix(object):
 		for x in range(self.size):
 			for y in range(self.size):
 				# Flip 0 and 1 
-				self.matrix[x][y] ^= 1
+				self.matrix[x][y] ^= 1 if self.matrix[x][y] != -1 else 0
 	
 	def gen_matrix(self, size):
 		# Get side length of final QR code
@@ -107,7 +190,7 @@ class Matrix(object):
 		for c in range(size):
 			column = []
 			for y in range(size):
-				column.append(0)
+				column.append(-1)
 				
 			# Add the current column to the final matrix
 			matrix.append(column)
@@ -121,7 +204,10 @@ class Matrix(object):
 		for y in range(self.size):
 			for x in range(self.size):
 				# Add corrosponding character for matrix value
-				outstring += self.char[self.matrix[x][y]]
+				if self.matrix[x][y] in self.char:
+					outstring += self.char[self.matrix[x][y]]
+				else:
+					outstring += (str(self.matrix[x][y])*2)[-2:]
 				
 			# Start new line as y increments
 			outstring += '\n'
@@ -134,20 +220,20 @@ class Matrix(object):
 	
 class QR(object):
 	def __init__(self, data):
-		self.version = 5
+		self.version = 1
 		self.correction = 'Q'
 		# 0001:Numeric, 0010:Alphanumeric
 		mode = '0010' 
-		
-		# Gen blank matrix with patterns in place
-		self.matrix = Matrix(self.version)
 		
 		# QR Specification
 		               # 236      ,  17
 		self.padders = ['11101100', '00010001']
 		self.encoded = self.encode(data, mode)
 		self.groups = self.add_encoded_error(self.segment_codewords(self.encoded))
-		self.interweave(self.groups)
+		bits = self.interweave(self.groups)
+		
+		self.matrix = Matrix(self.version)
+		self.matrix.insert_bits(bits)
 	
 	def segment_codewords(self, data):
 		group_data = error_chart[self.version][self.correction][2:]
@@ -320,7 +406,6 @@ class QR(object):
 			for b_index in range(sum(block_count)):
 			
 				# Should move to 1 when first group is done, 0 otherwise
-				print(int(groups[b_index // block_count[0]][b_index % block_count[0]][1][d_index], 2))
 				outweave += groups[b_index // block_count[0]][b_index % block_count[0]][1][d_index]
 		#
 		##########################################
