@@ -441,5 +441,5 @@ class QRtext(object):
 		self.length += padding * 2
 		
 if __name__ == "__main__":
-	t = QR('TEST123')
-	print(t.groups)
+	t = QR('TEST123').matrix
+	print(t)
